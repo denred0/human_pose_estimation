@@ -28,7 +28,8 @@ def get_2D_keypoints(det_config: str,
                      output_crops_dir: str,
                      save_results_txt: bool,
                      convert_coco_to_h36m: bool,
-                     output_h36m_dir: str) -> None:
+                     output_h36m_dir: str,
+                     output_h36m_txt_dir: str) -> None:
     # initialize pose model
     pose_model2d = init_pose_model(pose_config2d, pose_checkpoint2d)
 
@@ -36,15 +37,10 @@ def get_2D_keypoints(det_config: str,
     det_model = init_detector(det_config, det_checkpoint)
 
     image_files = get_all_files_in_folder(input_dir, ["*.jpg"])
-    # image_files = [os.path.join(input_dir, f) for f in os.listdir(input_dir) if f.endswith('.jpg')]
-
-    # image_files.sort(key=lambda x: x.split('/')[-1].split('.')[0])
 
     result_keypoints = []
     for f in tqdm(image_files):
 
-        # image_filename = f.split('/')[-1]
-        # image_filename = f.name
         mmdet_results = inference_detector(det_model, f)
 
         person_results = process_mmdet_results(mmdet_results, cat_id=1)
@@ -52,7 +48,7 @@ def get_2D_keypoints(det_config: str,
         pose_results, returned_outputs = inference_top_down_pose_model(pose_model2d,
                                                                        f,
                                                                        person_results,
-                                                                       bbox_thr=0.3,
+                                                                       bbox_thr=0.7,
                                                                        format='xyxy',
                                                                        dataset=pose_model2d.cfg.data.test.type)
         # remove face landmarks
@@ -85,6 +81,11 @@ def get_2D_keypoints(det_config: str,
             vis_convert_result = cv2.hconcat([vis_result, h36m_vis])
             cv2.imwrite(os.path.join(output_h36m_dir, f.name), vis_convert_result)
 
+            with open(os.path.join(output_h36m_txt_dir, str(f.stem) + ".txt"), 'w') as file:
+                for idx, item in enumerate(h36m_keypoints):
+                    file.write("%s\n" % (str(int(round(item[0], 0))) + " " + str(int(round(item[1], 0))) + " " +
+                               str(round(item[2], 3))))
+
         if len(pose_results) > 0:
             box = pose_results[0]['bbox']
 
@@ -102,11 +103,10 @@ def get_2D_keypoints(det_config: str,
 
                 result_keypoints.append(str(f.name) + " " + str(i) + " " + str(x) + " " + str(y))
 
-    if save_results_txt:
-        with open('data/mmpose_get_2D_skeleton/results_pytorch.txt', 'w') as f:
-            for item in result_keypoints:
-                f.write("%s\n" % item)
-
+        if save_results_txt:
+            with open('data/mmpose_get_2D_skeleton/results_pytorch.txt', 'w') as file:
+                for item in result_keypoints:
+                    file.write("%s\n" % item)
 
 if __name__ == "__main__":
     det_config = 'mmdetection/configs/cascade_rcnn/cascade_rcnn_r50_fpn_1x_coco.py'
@@ -122,8 +122,10 @@ if __name__ == "__main__":
     output_crops_dir = 'data/mmpose_get_2D_skeleton/output/crops'
     recreate_folder(output_crops_dir)
 
-    output_h36m_dir = 'data/mmpose_get_2D_skeleton/output/coco_to_h36m'
-    recreate_folder(output_h36m_dir)
+    output_h36m_images_dir = 'data/mmpose_get_2D_skeleton/output/coco_to_h36m_images'
+    recreate_folder(output_h36m_images_dir)
+    output_h36m_txt_dir = 'data/mmpose_get_2D_skeleton/output/coco_to_h36m_txt'
+    recreate_folder(output_h36m_txt_dir)
 
     save_results_txt = True
     convert_coco_to_h36m = True
@@ -137,4 +139,5 @@ if __name__ == "__main__":
                      output_crops_dir,
                      save_results_txt,
                      convert_coco_to_h36m,
-                     output_h36m_dir)
+                     output_h36m_images_dir,
+                     output_h36m_txt_dir)

@@ -135,8 +135,10 @@ kps_left, kps_right = list(keypoints_symmetry[0]), list(keypoints_symmetry[1])
 joints_left, joints_right = list(dataset.skeleton().joints_left()), list(dataset.skeleton().joints_right())
 keypoints = keypoints['positions_2d'].item()
 
-create_pose3D_rie_keypoints_visualization(keypoints=keypoints, subject='S1', action='Posing',
-                                          output_folder="data/pose_rie_run/keypoints_visualization")
+create_keypoints_visualization = False
+if create_keypoints_visualization:
+    create_pose3D_rie_keypoints_visualization(keypoints=keypoints, subject='S1', action='Posing',
+                                              output_folder="data/pose_rie_run/keypoints_visualization")
 
 for subject in dataset.subjects():
     assert subject in keypoints, 'Subject {} is missing from the 2D detections dataset'.format(subject)
