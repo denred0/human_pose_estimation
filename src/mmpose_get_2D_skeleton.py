@@ -70,7 +70,7 @@ def get_2D_keypoints(det_config: str,
 
         cv2.imwrite(os.path.join(output_dir, f.name), vis_result)
 
-        if convert_coco_to_h36m:
+        if convert_coco_to_h36m and pose_results:
             h36m_keypoints = coco_to_h36m(pose_results[0]['keypoints'].tolist())
 
             h36m_vis = imshow_keypoints(cv2.imread(str(f)),
