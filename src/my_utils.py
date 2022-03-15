@@ -179,13 +179,13 @@ def coco_to_h36m(coco_keypoints: List) -> []:
                                                                       h36m_keypoints[8][1])) / 2 + min(
             h36m_keypoints[0][1], h36m_keypoints[8][1]), (h36m_keypoints[0][2] + h36m_keypoints[8][2]) / 2]
 
-    if h36m_keypoints[8][1] > h36m_keypoints[9][1]:
-        h36m_keypoints[10] = [
-            (max(h36m_keypoints[8][0], h36m_keypoints[9][0]) - min(h36m_keypoints[8][0], h36m_keypoints[9][0])) / 2 +
-            min(h36m_keypoints[8][0], h36m_keypoints[9][0]),
-            h36m_keypoints[9][1] - (h36m_keypoints[8][1] - h36m_keypoints[9][1]) * 0.7, h36m_keypoints[9][2]]
-    else:
-        h36m_keypoints[10] = [0, 0, 0]
+    # if h36m_keypoints[8][1] > h36m_keypoints[9][1]:
+    h36m_keypoints[10] = [
+        (max(h36m_keypoints[8][0], h36m_keypoints[9][0]) - min(h36m_keypoints[8][0], h36m_keypoints[9][0])) / 2 +
+        min(h36m_keypoints[8][0], h36m_keypoints[9][0]),
+        h36m_keypoints[9][1] - (h36m_keypoints[8][1] - h36m_keypoints[9][1]) * 0.7, h36m_keypoints[9][2]]
+    # else:
+    #     h36m_keypoints[10] = [0, 0, 0]
 
     return h36m_keypoints
 

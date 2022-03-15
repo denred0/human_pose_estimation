@@ -14,7 +14,43 @@ from pose_rie_run import evaluate, fetch
 from poserie.common.model import RIEModel
 
 
-def create_3D_render(input_txt_dir: str, frame_size: tuple):
+def create_3D_render(input_txt_dir: str,
+                     frame_size: tuple,
+                     batch_size_param,
+                     stride_param,
+                     pad,
+                     causal_shift,
+                     test_time_augmentation,
+                     kps_left,
+                     kps_right,
+                     joints_left,
+                     joints_right,
+                     viz_export,
+                     viz_output_param,
+                     viz_no_ground_truth,
+                     viz_bitrate,
+                     cam_azimuth,
+                     viz_downsample,
+                     viz_limit,
+                     viz_video,
+                     viz_skip,
+                     viz_action_param,
+                     viz_subject_param,
+                     viz_size,
+                     architecture,
+                     causal,
+                     dropout,
+                     channels,
+                     latent_features_dim,
+                     dense,
+                     stage_param,
+                     viz_camera_param,
+                     resume,
+                     finetune,
+                     evaluate_param,
+                     checkpoint_dir,
+                     dataset_name):
+    #
     txts = get_all_files_in_folder(input_txt_dir, ["*.txt"])
 
     keypoints = np.zeros([len(txts), 17, 2])
@@ -29,51 +65,15 @@ def create_3D_render(input_txt_dir: str, frame_size: tuple):
     keypoints[..., :2] = normalize_screen_coordinates(keypoints[..., :2], w=frame_size[0], h=frame_size[1])
 
     print('Rendering...')
-
     input_keypoints = keypoints.copy()
     ground_truth = None
     if ground_truth is None:
         print('INFO: this action is unlabeled. Ground truth will not be rendered.')
 
-    batch_size_param = 1024
-    stride_param = 1
-    pad = 121
-    causal_shift = 0
-    test_time_augmentation = True
-    kps_left = [4, 5, 6, 11, 12, 13]
-    kps_right = [1, 2, 3, 14, 15, 16]
-    joints_left = [4, 5, 6, 11, 12, 13]
-    joints_right = [1, 2, 3, 14, 15, 16]
-    viz_export = None
-    viz_output_param = "result.mp4"
-    viz_no_ground_truth = False
-    viz_bitrate = 3000
-    cam_azimuth = np.array(70., dtype=np.float32)
-    viz_downsample = 1
-    viz_limit = -1
-    viz_video = None
-    viz_skip = 0
-    viz_action_param = "Waiting"
-    viz_subject_param = "S9"
-    viz_size = 5
-    architecture = "3,3,3,3,3"
-    causal = False
-    dropout = 0.2
-    channels = 256
-    latent_features_dim = 256
-    dense = False
-    stage_param = 3
-    viz_camera_param = 0
-    resume = ""
-    finetune = ""
-    evaluate_param = "gt_pretrained.bin"
-    checkpoint_dir = "poserie/checkpoint"
-
     filter_widths = [int(x) for x in architecture.split(',')]
 
     keypoints_metadata = {'num_joints': 17, 'keypoints_symmetry': [[4, 5, 6, 11, 12, 13], [1, 2, 3, 14, 15, 16]]}
 
-    dataset_name = "h36m"
     dataset_path = 'poserie/data/data_3d_' + dataset_name + '.npz'
     if dataset_name == 'h36m':
         from poserie.common.h36m_dataset import Human36mDataset
@@ -139,7 +139,9 @@ def create_3D_render(input_txt_dir: str, frame_size: tuple):
                 if 'orientation' in dataset.cameras()[subject][1]:
                     rot = dataset.cameras()[subject][viz_camera_param]['orientation']
                     break
-            prediction = camera_to_world(prediction, R=rot, t=0)
+            t = (0, 0, -1000)
+            # t = (0, 0, 0)
+            prediction = camera_to_world(prediction, R=rot, t=t)
             # We don't have the trajectory, but at least we can rebase the height
             prediction[:, :, 2] -= np.min(prediction[:, :, 2])
 
@@ -163,7 +165,7 @@ if __name__ == "__main__":
 
     output_h36m_txt_dir = 'data/mmpose_get_2D_skeleton/output/coco_to_h36m_txt'
     output_h36m_images_dir = 'data/mmpose_get_2D_skeleton/output/coco_to_h36m_images'
-    is_2d_exist = True
+    is_2d_exist = False
 
     if not is_2d_exist:
         det_config = 'mmdetection/configs/cascade_rcnn/cascade_rcnn_r50_fpn_1x_coco.py'
@@ -199,9 +201,80 @@ if __name__ == "__main__":
                          output_h36m_txt_dir)
 
     images = get_all_files_in_folder(output_h36m_images_dir, ["*.jpg"])
+
+    batch_size_param = 1024
+    stride_param = 1
+    pad = 121
+    causal_shift = 0
+    test_time_augmentation = True
+    kps_left = [4, 5, 6, 11, 12, 13]
+    kps_right = [1, 2, 3, 14, 15, 16]
+    joints_left = [4, 5, 6, 11, 12, 13]
+    joints_right = [1, 2, 3, 14, 15, 16]
+    viz_export = None
+    viz_output_param = "result.mp4"
+    viz_no_ground_truth = False
+    viz_bitrate = 3000
+    cam_azimuth = np.array(70., dtype=np.float32)
+    viz_downsample = 1
+    viz_limit = -1
+    viz_video = None
+    viz_skip = 0
+    viz_action_param = "Waiting"
+    viz_subject_param = "S9"
+    viz_size = 5
+    architecture = "3,3,3,3,3"
+    causal = False
+    dropout = 0.2
+    channels = 256
+    latent_features_dim = 256
+    dense = False
+    stage_param = 3
+    viz_camera_param = 0
+    resume = ""
+    finetune = ""
+    evaluate_param = "gt_pretrained.bin"
+    checkpoint_dir = "poserie/checkpoint"
+    dataset_name = "h36m"
+
     if images:
         temp_img = cv2.imread(str(images[0]))
-        frame_size = temp_img.shape[:2]
-        create_3D_render(output_h36m_txt_dir, frame_size)
+        frame_size = (temp_img.shape[1] // 2, temp_img.shape[0])
+        create_3D_render(output_h36m_txt_dir,
+                         frame_size,
+                         batch_size_param,
+                         stride_param,
+                         pad,
+                         causal_shift,
+                         test_time_augmentation,
+                         kps_left,
+                         kps_right,
+                         joints_left,
+                         joints_right,
+                         viz_export,
+                         viz_output_param,
+                         viz_no_ground_truth,
+                         viz_bitrate,
+                         cam_azimuth,
+                         viz_downsample,
+                         viz_limit,
+                         viz_video,
+                         viz_skip,
+                         viz_action_param,
+                         viz_subject_param,
+                         viz_size,
+                         architecture,
+                         causal,
+                         dropout,
+                         channels,
+                         latent_features_dim,
+                         dense,
+                         stage_param,
+                         viz_camera_param,
+                         resume,
+                         finetune,
+                         evaluate_param,
+                         checkpoint_dir,
+                         dataset_name)
     else:
         print("fThere is no images in {output_h36m_images_dir} folder")
