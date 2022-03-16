@@ -49,7 +49,8 @@ def create_3D_render(input_txt_dir: str,
                      finetune,
                      evaluate_param,
                      checkpoint_dir,
-                     dataset_name):
+                     dataset_name,
+                     fps):
     #
     txts = get_all_files_in_folder(input_txt_dir, ["*.txt"])
 
@@ -153,7 +154,7 @@ def create_3D_render(input_txt_dir: str,
 
         from poserie.common.visualization import render_animation
 
-        fps = 30
+
         render_animation(input_keypoints, keypoints_metadata, anim_output,
                          dataset.skeleton(), fps, viz_bitrate, cam_azimuth, viz_output_param,
                          limit=viz_limit, downsample=viz_downsample, size=viz_size,
@@ -236,6 +237,7 @@ if __name__ == "__main__":
     evaluate_param = "gt_pretrained.bin"
     checkpoint_dir = "poserie/checkpoint"
     dataset_name = "h36m"
+    fps = 30
 
     if images:
         temp_img = cv2.imread(str(images[0]))
@@ -275,6 +277,7 @@ if __name__ == "__main__":
                          finetune,
                          evaluate_param,
                          checkpoint_dir,
-                         dataset_name)
+                         dataset_name,
+                         fps)
     else:
         print("fThere is no images in {output_h36m_images_dir} folder")

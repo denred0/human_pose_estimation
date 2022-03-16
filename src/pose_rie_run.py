@@ -32,7 +32,10 @@ from my_utils import recreate_folder
 from constants import H36M_POSE_CONNECTIONS
 
 
-def create_pose3D_rie_keypoints_visualization(keypoints: dict, subject: str, action: str, output_folder: str) -> None:
+def create_pose3D_rie_keypoints_visualization(keypoints: dict,
+                                              subject: str,
+                                              action: str,
+                                              output_folder: str) -> None:
     recreate_folder(output_folder)
     keypoints_example = keypoints[subject][action][0]
 
@@ -55,6 +58,84 @@ def create_pose3D_rie_keypoints_visualization(keypoints: dict, subject: str, act
 
         cv2.imwrite(os.path.join(output_folder, str(index) + ".jpg"), img)
         index += 1
+
+
+def run_evaluation(dataset,
+                   keypoints,
+                   model_pos,
+                   joints_left,
+                   joints_right,
+                   causal_shift,
+                   kps_left,
+                   kps_right,
+                   pad,
+                   actions,
+                   action_filter=None):
+    errors_p1 = []
+    errors_p2 = []
+
+    for action_key in actions.keys():
+        if action_filter is not None:
+            found = False
+            for a in action_filter:
+                if action_key.startswith(a):
+                    found = True
+                    break
+            if not found:
+                continue
+
+        poses_act, poses_2d_act = fetch_actions(dataset, keypoints, actions[action_key])
+        # poses_act = None
+        gen = Evaluate_Generator(batch_size_param,
+                                 None,
+                                 poses_act,
+                                 poses_2d_act,
+                                 stride_param,
+                                 pad=pad,
+                                 causal_shift=causal_shift,
+                                 augment=args.test_time_augmentation,
+                                 shuffle=False,
+                                 kps_left=kps_left,
+                                 kps_right=kps_right,
+                                 joints_left=joints_left,
+                                 joints_right=joints_right)
+        e1, e2 = evaluate(model_pos, gen, joints_left, joints_right, action_key)
+        errors_p1.append(e1)
+        errors_p2.append(e2)
+
+    print('Protocol #1   (MPJPE) action-wise average:', round(np.mean(errors_p1), 1), 'mm')
+    print('Protocol #2 (P-MPJPE) action-wise average:', round(np.mean(errors_p2), 1), 'mm')
+
+    log_path = os.path.join(checkpoint_dir, 'evaluating_log.txt')
+    f = open(log_path, mode='a')
+    f.write('Protocol #1   (MPJPE) action-wise average:' + str(round(np.mean(errors_p1), 1)) + 'mm\n')
+    f.write('Protocol #2 (P-MPJPE) action-wise average:' + str(round(np.mean(errors_p2), 1)) + 'mm\n')
+    f.close()
+
+
+def fetch_actions(dataset, keypoints, actions):
+    out_poses_3d = []
+    out_poses_2d = []
+
+    for subject, action in actions:
+        poses_2d = keypoints[subject][action]
+        for i in range(len(poses_2d)):  # Iterate across cameras
+            out_poses_2d.append(poses_2d[i])
+
+        poses_3d = dataset[subject][action]['positions_3d']
+        assert len(poses_3d) == len(poses_2d), 'Camera count mismatch'
+        for i in range(len(poses_3d)):  # Iterate across cameras
+            out_poses_3d.append(poses_3d[i])
+
+    stride = args.downsample
+    if stride > 1:
+        # Downsample as requested
+        for i in range(len(out_poses_2d)):
+            out_poses_2d[i] = out_poses_2d[i][::stride]
+            if out_poses_3d is not None:
+                out_poses_3d[i] = out_poses_3d[i][::stride]
+
+    return out_poses_3d, out_poses_2d
 
 
 def fetch(keypoints, dataset, subjects, action_filter=None, subset=1, parse_3d_poses=True):
@@ -338,23 +419,43 @@ def run(checkpoint_dir,
     filter_widths = [int(x) for x in args.architecture.split(',')]
     if not args.disable_optimizations and not args.dense and stride_param == 1:
         # Use optimized model for single-frame predictions
-        model_pos_train = RIEModel(poses_valid_2d[0].shape[-2], poses_valid_2d[0].shape[-1],
+        model_pos_train = RIEModel(poses_valid_2d[0].shape[-2],
+                                   poses_valid_2d[0].shape[-1],
                                    dataset.skeleton().num_joints(),
-                                   filter_widths=filter_widths, causal=args.causal, dropout=args.dropout,
-                                   channels=args.channels, latten_features=args.latent_features_dim,
-                                   dense=args.dense, is_train=True, Optimize1f=True, stage=stage_param)
+                                   filter_widths=filter_widths,
+                                   causal=args.causal,
+                                   dropout=args.dropout,
+                                   channels=args.channels,
+                                   latten_features=args.latent_features_dim,
+                                   dense=args.dense,
+                                   is_train=True,
+                                   Optimize1f=True,
+                                   stage=stage_param)
     else:
         # When incompatible settings are detected (stride > 1, dense filters, or disabled optimization) fall back to normal model
-        model_pos_train = RIEModel(poses_valid_2d[0].shape[-2], poses_valid_2d[0].shape[-1],
+        model_pos_train = RIEModel(poses_valid_2d[0].shape[-2],
+                                   poses_valid_2d[0].shape[-1],
                                    dataset.skeleton().num_joints(),
-                                   filter_widths=filter_widths, causal=args.causal, dropout=args.dropout,
+                                   filter_widths=filter_widths,
+                                   causal=args.causal,
+                                   dropout=args.dropout,
                                    channels=args.channels,
-                                   latten_features=args.latent_features_dim, dense=args.dense, is_train=True,
+                                   latten_features=args.latent_features_dim,
+                                   dense=args.dense,
+                                   is_train=True,
                                    stage=stage_param)
 
-    model_pos = RIEModel(poses_valid_2d[0].shape[-2], poses_valid_2d[0].shape[-1], dataset.skeleton().num_joints(),
-                         filter_widths=filter_widths, causal=args.causal, dropout=args.dropout, channels=args.channels,
-                         latten_features=args.latent_features_dim, dense=args.dense, is_train=False, Optimize1f=True,
+    model_pos = RIEModel(poses_valid_2d[0].shape[-2],
+                         poses_valid_2d[0].shape[-1],
+                         dataset.skeleton().num_joints(),
+                         filter_widths=filter_widths,
+                         causal=args.causal,
+                         dropout=args.dropout,
+                         channels=args.channels,
+                         latten_features=args.latent_features_dim,
+                         dense=args.dense,
+                         is_train=False,
+                         Optimize1f=True,
                          stage=stage_param)
 
     receptive_field = model_pos.receptive_field()
@@ -416,11 +517,18 @@ def run(checkpoint_dir,
 
     cameras_valid = None  # calculate without camera_info
     poses_valid = None
-    test_generator = ChunkedGenerator(batch_size_param // stride_param, cameras_valid, poses_valid, poses_valid_2d,
+    test_generator = ChunkedGenerator(batch_size_param // stride_param,
+                                      cameras_valid,
+                                      poses_valid,
+                                      poses_valid_2d,
                                       stride_param,
-                                      pad=pad, causal_shift=causal_shift, augment=args.test_time_augmentation,
+                                      pad=pad,
+                                      causal_shift=causal_shift,
+                                      augment=args.test_time_augmentation,
                                       shuffle=False,
-                                      kps_left=kps_left, kps_right=kps_right, joints_left=joints_left,
+                                      kps_left=kps_left,
+                                      kps_right=kps_right,
+                                      joints_left=joints_left,
                                       joints_right=joints_right)
     print('INFO: Testing on {} frames'.format(test_generator.num_frames()))
 
@@ -441,18 +549,31 @@ def run(checkpoint_dir,
         initial_momentum = 0.1
         final_momentum = 0.001
 
-        train_generator = ChunkedGenerator(batch_size_param // stride_param, cameras_train, poses_train, poses_train_2d,
+        train_generator = ChunkedGenerator(batch_size_param // stride_param,
+                                           cameras_train,
+                                           poses_train,
+                                           poses_train_2d,
                                            stride_param,
-                                           pad=pad, causal_shift=causal_shift, shuffle=True,
+                                           pad=pad,
+                                           causal_shift=causal_shift,
+                                           shuffle=True,
                                            augment=args.data_augmentation,
-                                           kps_left=kps_left, kps_right=kps_right, joints_left=joints_left,
+                                           kps_left=kps_left,
+                                           kps_right=kps_right,
+                                           joints_left=joints_left,
                                            joints_right=joints_right)
-        train_generator_eval = ChunkedGenerator(batch_size_param // stride_param, cameras_train, poses_train,
+        train_generator_eval = ChunkedGenerator(batch_size_param // stride_param,
+                                                cameras_train,
+                                                poses_train,
                                                 poses_train_2d,
                                                 stride_param,
-                                                pad=pad, causal_shift=causal_shift, shuffle=False,
+                                                pad=pad,
+                                                causal_shift=causal_shift,
+                                                shuffle=False,
                                                 augment=args.data_augmentation,
-                                                kps_left=kps_left, kps_right=kps_right, joints_left=joints_left,
+                                                kps_left=kps_left,
+                                                kps_right=kps_right,
+                                                joints_left=joints_left,
                                                 joints_right=joints_right)
         print('INFO: Training on {} frames'.format(train_generator_eval.num_frames()))
 
@@ -656,10 +777,18 @@ def run(checkpoint_dir,
         if ground_truth is None:
             print('INFO: this action is unlabeled. Ground truth will not be rendered.')
 
-        gen = Evaluate_Generator(batch_size_param, None, None, [input_keypoints], stride_param,
-                                 pad=pad, causal_shift=causal_shift, augment=args.test_time_augmentation,
+        gen = Evaluate_Generator(batch_size_param,
+                                 None,
+                                 None,
+                                 [input_keypoints],
+                                 stride_param,
+                                 pad=pad,
+                                 causal_shift=causal_shift,
+                                 augment=args.test_time_augmentation,
                                  shuffle=False,
-                                 kps_left=kps_left, kps_right=kps_right, joints_left=joints_left,
+                                 kps_left=kps_left,
+                                 kps_right=kps_right,
+                                 joints_left=joints_left,
                                  joints_right=joints_right)
         prediction = evaluate(model_pos, gen, joints_left, joints_right, return_predictions=True,
                               test_time_augmentation=test_time_augmentation)
@@ -700,11 +829,22 @@ def run(checkpoint_dir,
 
             from poserie.common.visualization import render_animation
 
-            render_animation(input_keypoints, keypoints_metadata, anim_output,
-                             dataset.skeleton(), dataset.fps(), args.viz_bitrate, cam['azimuth'], viz_output_param,
-                             limit=args.viz_limit, downsample=args.viz_downsample, size=args.viz_size,
-                             input_video_path=args.viz_video, viewport=(cam['res_w'], cam['res_h']),
-                             input_video_skip=args.viz_skip, viz_action=viz_action_param, viz_subject=viz_subject_param)
+            render_animation(input_keypoints,
+                             keypoints_metadata,
+                             anim_output,
+                             dataset.skeleton(),
+                             dataset.fps(),
+                             args.viz_bitrate,
+                             cam['azimuth'],
+                             viz_output_param,
+                             limit=args.viz_limit,
+                             downsample=args.viz_downsample,
+                             size=args.viz_size,
+                             input_video_path=args.viz_video,
+                             viewport=(cam['res_w'], cam['res_h']),
+                             input_video_skip=args.viz_skip,
+                             viz_action=viz_action_param,
+                             viz_subject=viz_subject_param)
 
 
     else:
@@ -724,70 +864,31 @@ def run(checkpoint_dir,
                 all_actions[action_name].append((subject, action))
                 all_actions_by_subject[subject][action_name].append((subject, action))
 
-        def fetch_actions(actions):
-            out_poses_3d = []
-            out_poses_2d = []
-
-            for subject, action in actions:
-                poses_2d = keypoints[subject][action]
-                for i in range(len(poses_2d)):  # Iterate across cameras
-                    out_poses_2d.append(poses_2d[i])
-
-                poses_3d = dataset[subject][action]['positions_3d']
-                assert len(poses_3d) == len(poses_2d), 'Camera count mismatch'
-                for i in range(len(poses_3d)):  # Iterate across cameras
-                    out_poses_3d.append(poses_3d[i])
-
-            stride = args.downsample
-            if stride > 1:
-                # Downsample as requested
-                for i in range(len(out_poses_2d)):
-                    out_poses_2d[i] = out_poses_2d[i][::stride]
-                    if out_poses_3d is not None:
-                        out_poses_3d[i] = out_poses_3d[i][::stride]
-
-            return out_poses_3d, out_poses_2d
-
-        def run_evaluation(actions, action_filter=None):
-            errors_p1 = []
-            errors_p2 = []
-
-            for action_key in actions.keys():
-                if action_filter is not None:
-                    found = False
-                    for a in action_filter:
-                        if action_key.startswith(a):
-                            found = True
-                            break
-                    if not found:
-                        continue
-
-                poses_act, poses_2d_act = fetch_actions(actions[action_key])
-                poses_act = None
-                gen = Evaluate_Generator(batch_size_param, None, poses_act, poses_2d_act, stride_param,
-                                         pad=pad, causal_shift=causal_shift, augment=args.test_time_augmentation,
-                                         shuffle=False,
-                                         kps_left=kps_left, kps_right=kps_right, joints_left=joints_left,
-                                         joints_right=joints_right)
-                e1, e2 = evaluate(gen, action_key)
-                errors_p1.append(e1)
-                errors_p2.append(e2)
-
-            print('Protocol #1   (MPJPE) action-wise average:', round(np.mean(errors_p1), 1), 'mm')
-            print('Protocol #2 (P-MPJPE) action-wise average:', round(np.mean(errors_p2), 1), 'mm')
-
-            log_path = os.path.join(checkpoint_dir, 'evaluating_log.txt')
-            f = open(log_path, mode='a')
-            f.write('Protocol #1   (MPJPE) action-wise average:' + str(round(np.mean(errors_p1), 1)) + 'mm\n')
-            f.write('Protocol #2 (P-MPJPE) action-wise average:' + str(round(np.mean(errors_p2), 1)) + 'mm\n')
-            f.close()
-
         if not args.by_subject:
-            run_evaluation(all_actions, action_filter)
+            run_evaluation(dataset,
+                           keypoints,
+                           model_pos,
+                           joints_left,
+                           joints_right,
+                           causal_shift,
+                           kps_left,
+                           kps_right,
+                           pad,
+                           all_actions,
+                           action_filter)
         else:
             for subject in all_actions_by_subject.keys():
                 print('Evaluating on subject', subject)
-                run_evaluation(all_actions_by_subject[subject], action_filter)
+                run_evaluation(dataset,
+                               keypoints,
+                               model_pos,
+                               joints_left,
+                               joints_right, causal_shift,
+                               kps_left,
+                               kps_right,
+                               pad,
+                               all_actions_by_subject[subject],
+                               action_filter)
                 print('')
 
 
@@ -822,7 +923,7 @@ if __name__ == "__main__":
     viz_action_param = "Greeting"
     viz_camera_param = 0
     viz_output_param = f"data/pose_rie_run/renders/render_subject_{viz_subject_param}_action_{viz_action_param}_cam_{viz_camera_param}.mp4"
-    render_param = True
+    render_param = False
     test_time_augmentation = True
 
     run(checkpoint_dir,

@@ -264,6 +264,7 @@ test_generator = ChunkedGenerator(args.batch_size // args.stride, cameras_valid,
                                   joints_right=joints_right)
 print('INFO: Testing on {} frames'.format(test_generator.num_frames()))
 
+args.evaluate = True
 if not args.evaluate:
     cameras_train, poses_train, poses_train_2d = fetch(subjects_train, action_filter, subset=args.subset)
 
